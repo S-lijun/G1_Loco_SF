@@ -1,0 +1,109 @@
+diff --git a/PyHJ/__init__.py b/PyHJ/__init__.py
+index a2a6c6a..44d3d9b 100644
+--- a/PyHJ/__init__.py
++++ b/PyHJ/__init__.py
+@@ -1,4 +1,18 @@
+-from PyHJ import data, env, exploration, policy, trainer, utils, reach_rl_gym_envs
++from PyHJ import data, env, exploration, policy, trainer, utils
++
++# Built-in reachability gym envs are optional. Importing them under Isaac Lab
++# (gymnasium 1.x) used to fail; humanoid HJ uses LatentHumanoidEnv instead.
++try:
++    from PyHJ import reach_rl_gym_envs  # noqa: F401
++except Exception as _reach_env_exc:  # pragma: no cover
++    reach_rl_gym_envs = None  # type: ignore
++    import warnings
++
++    warnings.warn(
++        f"PyHJ.reach_rl_gym_envs unavailable ({_reach_env_exc!r}); "
++        "OK if you train with a custom env (e.g. LatentHumanoidEnv).",
++        stacklevel=1,
++    )
+ 
+ __version__ = "0.0.1" # we adapt this repo from Tianshou version 0.5.1
+ 
+diff --git a/PyHJ/data/__init__.py b/PyHJ/data/__init__.py
+index 3edbfad..7bcc254 100644
+--- a/PyHJ/data/__init__.py
++++ b/PyHJ/data/__init__.py
+@@ -15,7 +15,9 @@ from PyHJ.data.buffer.vecbuf import (
+     VectorReplayBuffer,
+ )
+ from PyHJ.data.buffer.cached import CachedReplayBuffer
+-from PyHJ.data.collector import Collector, AsyncCollector
++
++# Collector imports PyHJ.policy; keep it lazy so policy.base can import
++# Batch/ReplayBuffer without circular import (esp. Windows / newer Python).
+ 
+ __all__ = [
+     "Batch",
+@@ -33,3 +35,15 @@ __all__ = [
+     "Collector",
+     "AsyncCollector",
+ ]
++
++
++def __getattr__(name: str):
++    if name == "Collector":
++        from PyHJ.data.collector import Collector
++
++        return Collector
++    if name == "AsyncCollector":
++        from PyHJ.data.collector import AsyncCollector
++
++        return AsyncCollector
++    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+diff --git a/PyHJ/data/collector.py b/PyHJ/data/collector.py
+index 161daf0..fc15367 100644
+--- a/PyHJ/data/collector.py
++++ b/PyHJ/data/collector.py
+@@ -16,7 +16,8 @@ from PyHJ.data import (
+ )
+ from PyHJ.data.batch import _alloc_by_keys_diff
+ from PyHJ.env import BaseVectorEnv, DummyVectorEnv
+-from PyHJ.policy import BasePolicy
++# Import submodule directly to avoid circular import with PyHJ.policy.__init__.
++from PyHJ.policy.base import BasePolicy
+ 
+ 
+ class Collector(object):
+diff --git a/PyHJ/policy/base.py b/PyHJ/policy/base.py
+index 96136c8..db58da8 100644
+--- a/PyHJ/policy/base.py
++++ b/PyHJ/policy/base.py
+@@ -8,7 +8,10 @@ from gymnasium.spaces import Box, Discrete, MultiBinary, MultiDiscrete
+ from numba import njit
+ from torch import nn
+ 
+-from PyHJ.data import Batch, ReplayBuffer, to_numpy, to_torch_as
++# Leaf imports avoid circular import via PyHJ.data.__init__ → collector → policy.
++from PyHJ.data.batch import Batch
++from PyHJ.data.buffer.base import ReplayBuffer
++from PyHJ.data.utils.converter import to_numpy, to_torch_as
+ from PyHJ.utils import MultipleLRSchedulers
+ 
+ 
+diff --git a/PyHJ/reach_rl_gym_envs/__init__.py b/PyHJ/reach_rl_gym_envs/__init__.py
+index be9fe26..2798247 100644
+--- a/PyHJ/reach_rl_gym_envs/__init__.py
++++ b/PyHJ/reach_rl_gym_envs/__init__.py
+@@ -1,14 +1,9 @@
+-"""Registers the internal gym envs then loads the env plugins for module using the entry point."""
+-from typing import Any
++"""Registers the internal gym envs (optional for Isaac / LatentHumanoid training).
+ 
+-from gymnasium.envs.registration import (
+-    load_plugin_envs,
+-    make,
+-    pprint_registry,
+-    register,
+-    registry,
+-    spec,
+-)
++``load_plugin_envs`` existed in older gymnasium (0.28/0.29) but was removed in
++1.x (Isaac Lab pins gymnasium==1.2.0). It was unused here anyway.
++"""
++from gymnasium.envs.registration import register
+ 
+ 
+ 
